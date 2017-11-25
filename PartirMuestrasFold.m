@@ -1,6 +1,6 @@
 function [Xtrain, Xtest, Ytrain, Ytest] = PartirMuestrasFold(Rept,N, X, Y, fold, tipo)
     rng('default');
-    particion=cvpartition(N,'Kfold',Rept);
+    particion=cvpartition(Y,'Kfold',Rept);
     indices=particion.training(fold);
     Xtrain=X(particion.training(fold),:);
     Xtest=X(particion.test(fold),:);

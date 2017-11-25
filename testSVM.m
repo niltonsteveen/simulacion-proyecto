@@ -1,6 +1,3 @@
-% funcion para probar el modelo SVM
-function [Yest, YestContinuo] = testSVM(Model,Xtest)
-
-    [Yest, YestContinuo] = simlssvm(Model,Xtest);
-    
+function [Ytest,PYTest] = testSVM(Modelo,Xtest)
+ [Ytest,PYTest]= simlssvm(Modelo,Xtest);
 end
