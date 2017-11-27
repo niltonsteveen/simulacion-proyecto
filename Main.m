@@ -3,7 +3,14 @@ clear all
 % close all
 load('sensor_data.csv');
 %Se cargan las muestras
-X=sensor_data(1:end,1:end-1);
+X=sensor_data(1:end,1:end-1); 
+X2=X(:, 12);
+X2=[X2, X(:, 14)];
+X2=[X2, X(:, 15)];
+X2=[X2, X(:, 18)];
+X2=[X2, X(:, 19)];
+X2=[X2, X(:, 20)];
+%X = X(:, caracteristicasElegidas);
 %Se cargan las salidas
 Y=sensor_data(1:end,end);
 Y2=(Y')';
@@ -38,7 +45,7 @@ if Tipo==1 %Funciones discriminantes gaussianas
     resultados(mean(EficienciaTest),Error, mean(SensibilidadTest), mean(PrecisionTest), IC);       
 elseif Tipo==2 %k vecinos   
     for fold=1:Rept
-        [Xtrain,Xtest,Ytrain,Ytest]=PartirMuestrasFold(Rept,N, X, Y, fold, Tipo);         
+        [Xtrain,Xtest,Ytrain,Ytest]=PartirMuestrasFold(Rept,N, X2, Y, fold, Tipo);         
         %%% Normalización %%%
 
         [Xtrain,mu,sigma]=zscore(Xtrain);
@@ -61,8 +68,8 @@ elseif Tipo==2 %k vecinos
     Error=1-mean(EficienciaTest);
     resultados(mean(EficienciaTest),Error, mean(SensibilidadTest), mean(PrecisionTest), IC);
 elseif Tipo==3
-    epocas= 50;
-    neuronas = 10;
+    epocas= 800;
+    neuronas = 22;
     %[~,loc]=ismember(Y,unique(Y));
     %y_one_hot = ind2vec(loc')';
     %Y=full(y_one_hot);
@@ -70,7 +77,7 @@ elseif Tipo==3
     net.trainParam.epochs = epocas;
     net.layers{1}.size=neuronas; 
     for fold=1:Rept
-        [Xtrain,Xtest,Ytrain,Ytest]=PartirMuestrasFold(Rept,N, X, Y, fold, Tipo);
+        [Xtrain,Xtest,Ytrain,Ytest]=PartirMuestrasFold(Rept,N, X2, Y, fold, Tipo);
 
         %%% Normalización %%%
 
@@ -96,9 +103,9 @@ elseif Tipo==3
     resultados(mean(EficienciaTest),Error, mean(SensibilidadTest), mean(PrecisionTest), IC);
 elseif Tipo==4
     for fold=1:Rept
-        [Xtrain,Xtest,Ytrain,Ytest]=PartirMuestrasFold(Rept,N, X, Y, fold, Tipo);
+        [Xtrain,Xtest,Ytrain,Ytest]=PartirMuestrasFold(Rept,N, X2, Y, fold, Tipo);
         
-        NumArboles=10;
+        NumArboles=100;
         Modelo=entrenarFOREST(NumArboles,Xtrain,Ytrain);
         Yest=testFOREST(Modelo,Xtest);       
 
@@ -117,7 +124,7 @@ elseif Tipo==4
 elseif Tipo==5    
     k = 'g';%kernel
     for fold=1:Rept
-        [Xtrain,Xtest,Ytrain,Ytest]=PartirMuestrasFold(Rept,N, X, Y, fold, Tipo);
+        [Xtrain,Xtest,Ytrain,Ytest]=PartirMuestrasFold(Rept,N, X2, Y, fold, Tipo);
 
         [Xtrain,mu,sigma]=zscore(Xtrain);
         %Xtest=normalizar(Xtest,mu,sigma);
@@ -251,103 +258,71 @@ elseif Tipo==7
     sentido = 'forward'; 
     
     [caracteristicasElegidas, proceso] = sequentialfs(@funcionForest,X,Y,'direction',sentido,'options',opciones);
-    
-    X = X(:, caracteristicasElegidas);
-    
-   % TipoModelo=input('Ingrese 1 para random forest, 2 para knn y 3 para rna \n input:');
+elseif Tipo==8
+    umbralPorcentajeDeVarianza = 85;
     for fold=1:Rept
-        [Xtrain,Xtest,Ytrain,Ytest]=PartirMuestrasFold(Rept,N, X, Y, fold, 2);
+        %%% Se hace la partición de las muestras %%%
+        %%%      de entrenamiento y prueba       %%%
+    	[Xtrain,Xtest,Ytrain,Ytest]=PartirMuestrasFold(Rept,N, X2, Y, fold, Tipo);
+        
+        %%% Se normalizan los datos %%%
 
         [Xtrain,mu,sigma] = zscore(Xtrain);
         Xtest = (Xtest - repmat(mu,size(Xtest,1),1))./repmat(sigma,size(Xtest,1),1);
-
-        NumArboles=100;
-        Modelo = TreeBagger(NumArboles,Xtrain,Ytrain,'oobvarimp', 'On');
-
-        % Se obtienen las predicciones del modelo con base al modelo
-        % entrenado y las muestras separadas para la validacion del sistema
+        
+        [coefCompPrincipales,scores,latent,tsquared,explained,mu] = pca(Xtrain);
+        
+        numVariables = 24;
+        numCompAdmitidos = 0;
+        
+        porcentajeVarianzaAcumulada = zeros(numVariables,1);
+        puntosUmbral = ones(numVariables,1)*umbralPorcentajeDeVarianza;
+        ejeComponentes = 1:numVariables;
+        
+        for k=1:numVariables
+            porcentajeVarianzaAcumulada(k) = sum(porcentajeVarianzaExplicada(1:k));
+            
+            
+            if (sum(porcentajeVarianzaExplicada(1:k)) >= umbralPorcentajeDeVarianza) && (numCompAdmitidos == 0)
+                numCompAdmitidos = k;
+            end
+        end
+        
+        figure(1)
+        stem(ejeComponentes, covarianzaEigenValores)
+        xlim([1 numVariables]);
+        title('Varianza de los componentes principales');
+        xlabel('Componentes principales');
+        ylabel('EigenValor');
+        
+        figure(2)
+        plot(ejeComponentes, porcentajeVarianzaAcumulada);
+        xlim([1 numVariables]);
+        hold on;
+        plot(ejeComponentes, puntosUmbral,'r');
+        title('Varianza acumulada de los componentes principales');
+        xlabel('Componentes principales');
+        ylabel('Varianza explicada (%)');
+        hold off;
+        
+        aux = Xtrain*coefCompPrincipales;
+        Xtrain = aux(:,1:numCompAdmitidos);
+        
+        aux = Xtest*coefCompPrincipales;
+        Xtest = aux(:,1:numCompAdmitidos);
+        
+        NumArboles=10;
+        Modelo = TreeBagger(NumArboles,Xtrain,Ytrain);
+        
         Yest = predict(Modelo,Xtest);
         Yest = str2double(Yest);
-
-        NXtest = size(Xtest,1);
-        MatrizConfusion = zeros(NClases,NClases);
-        MatrizConfusion = MatrizYMedidasFold(MatrizConfusion, Yest, Ytest, NXtest);
-
-        diagonal = diag(MatrizConfusion);
-        EficienciaTest(fold) = sum(diag(MatrizConfusion))/sum(sum(MatrizConfusion));
-        PrecisionTest(fold,:) = diagonal' ./(sum(MatrizConfusion'));
-        SensibilidadTest(fold,:) = diagonal' ./(sum(MatrizConfusion));            
+        
+        EficienciaTest(fold) = sum(Ytest == Yest)/length(Ytest);
     end
-    IC = std(EficienciaTest);
-    Error=1-mean(EficienciaTest);
-    resultados(mean(EficienciaTest),Error, mean(SensibilidadTest), mean(PrecisionTest), IC);
     
-    Rept=10;
-    EficienciaTest=zeros(1,Rept);
-    PrecisionTest=zeros(Rept,4);
-    SensibilidadTest=zeros(Rept,4);
-    
-    for fold=1:Rept
-        [Xtrain,Xtest,Ytrain,Ytest]=PartirMuestrasFold(Rept,N, X, Y, fold, 1);         
-        %%% Normalización %%%
-
-        [Xtrain,mu,sigma]=zscore(Xtrain);
-        Xtest=normalizar(Xtest,mu,sigma);
-
-        k=1;
-        Yesti=vecinosCercanos(Xtest,Xtrain,Ytrain,k,'class'); 
-
-        NXtest = size(Xtest,1);
-        MatrizConfusion = zeros(NClases,NClases);
-        Matriz5Confusion = MatrizYMedidasFold(MatrizConfusion, Yesti, Ytest, NXtest);
-
-        diagonal = diag(MatrizConfusion);
-        EficienciaTest(fold) = sum(diag(MatrizConfusion))/sum(sum(MatrizConfusion));
-        PrecisionTest(fold,:) = diagonal' ./(sum(MatrizConfusion'));
-        SensibilidadTest(fold,:) = diagonal' ./(sum(MatrizConfusion));
-
-    end
+    Eficiencia = mean(EficienciaTest);
     IC = std(EficienciaTest);
-    Error=1-mean(EficienciaTest);
-    resultados(mean(EficienciaTest),Error, mean(SensibilidadTest), mean(PrecisionTest), IC);
-
-    
-    epocas= 50;
-    neuronas = 60;
-    %[~,loc]=ismember(Y,unique(Y));
-    %y_one_hot = ind2vec(loc')';
-    %Y=full(y_one_hot);
-    net = feedforwardnet(10);
-    net.trainParam.epochs = epocas;
-    net.layers{1}.size=neuronas; 
-    Rept=10;
-    EficienciaTest=zeros(1,Rept);
-    PrecisionTest=zeros(Rept,4);
-    SensibilidadTest=zeros(Rept,4);
-    for fold=1:Rept
-        [Xtrain,Xtest,Ytrain,Ytest]=PartirMuestrasFold(Rept,N, X, Y, fold, 3);
-
-        %%% Normalización %%%
-
-        [Xtrain,mu,sigma]=zscore(Xtrain);
-        Xtest=normalizar(Xtest,mu,sigma);
-
-        net = train(net,Xtrain',Ytrain');
-        yest = sim(net,Xtest');
-        yest = yest';
-        [~,Yest] = max(yest,[],2);
-
-        NXtest = size(Xtest,1);
-        MatrizConfusion = zeros(NClases,NClases);
-        MatrizConfusion = MatrizYMedidasFold(MatrizConfusion, Yest, Ytest, NXtest);
-
-        diagonal = diag(MatrizConfusion);
-        EficienciaTest(fold) = sum(diag(MatrizConfusion))/sum(sum(MatrizConfusion));
-        PrecisionTest(fold,:) = diagonal' ./(sum(MatrizConfusion'));
-        SensibilidadTest(fold,:) = diagonal' ./(sum(MatrizConfusion));
-    end
-    IC = std(EficienciaTest);
-    Error=1-mean(EficienciaTest);
-    resultados(mean(EficienciaTest),Error, mean(SensibilidadTest), mean(PrecisionTest), IC);
+    Texto=['La eficiencia obtenida fue = ', num2str(Eficiencia),' +- ',num2str(IC)];
+    disp(Texto);
 end
     
