@@ -24,7 +24,7 @@ gamma=100; % Este es el parametro (si lo necesita) de la funcion kernel
 N=size(X,1); %Numero de muestras
 NClases=length(unique(Y));
 
-Tipo=input('Ingrese según lo desee: \n 1. Funciones Discriminantes Gausianas\n 2. K-nn\n 3. RNA\n 4. Random Forest \n 5. Máquinas de soporte Vectorial\n 6. Fisher \n 7. Simulaciones con los 3 mejores input: ');
+Tipo=input('Ingrese según lo desee: \n 1. Funciones Discriminantes Gausianas\n 2. K-nn\n 3. RNA\n 4. Random Forest \n 5. Máquinas de soporte Vectorial\n 6. Fisher \n 7. Simulaciones con los 3 mejores\n 8. PCA \n input: ');
 
 if Tipo==1 %Funciones discriminantes gaussianas
     for fold=1:Rept
@@ -260,34 +260,57 @@ elseif Tipo==7
     [caracteristicasElegidas, proceso] = sequentialfs(@funcionForest,X,Y,'direction',sentido,'options',opciones);
 elseif Tipo==8
     umbralPorcentajeDeVarianza = 85;
+    epocas= 100;
+    neuronas = 60;
+    %[~,loc]=ismember(Y,unique(Y));
+    %y_one_hot = ind2vec(loc')';
+    %Y=full(y_one_hot);
+    net = feedforwardnet(10);
+    net.trainParam.epochs = epocas;
+    net.layers{1}.size=neuronas;
     for fold=1:Rept
-        %%% Se hace la partición de las muestras %%%
-        %%%      de entrenamiento y prueba       %%%
-    	[Xtrain,Xtest,Ytrain,Ytest]=PartirMuestrasFold(Rept,N, X2, Y, fold, Tipo);
+        [Xtrain,Xtest,Ytrain,Ytest]=PartirMuestrasFold(Rept,N, X, Y, fold, 3);
         
         %%% Se normalizan los datos %%%
 
         [Xtrain,mu,sigma] = zscore(Xtrain);
         Xtest = (Xtest - repmat(mu,size(Xtest,1),1))./repmat(sigma,size(Xtest,1),1);
         
-        [coefCompPrincipales,scores,latent,tsquared,explained,mu] = pca(Xtrain);
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         
-        numVariables = 24;
+        % Ahora, se extraen los componentes principales, de modo que:
+        
+        % Se usa la función PCA de matalab para obtener los coeficientes de los componentes principales, los scores, las
+        % varianzas de los componentes principales y el porcentaje de varianza explicada de estos. La sumatoria de este ultimo
+        % retorno debe dar un total del 100%
+        [coefCompPrincipales,scores,covarianzaEigenValores,~,porcentajeVarianzaExplicada,~] = pca(Xtrain);
+        
+        % A continuacion, se almacena el numero original de variables que tiene el sistema
+        numVariables = length(covarianzaEigenValores);
+        % También, se crea un variable con la cual se guardara el numero de componentes principales cuyos porcentajes de varianza sumada superan el porcentaje de varianza limite deseada
         numCompAdmitidos = 0;
         
+        % Luego, se crean unas variables que almacenaran coordenadas de unas graficas que se dibujaran más adelante
         porcentajeVarianzaAcumulada = zeros(numVariables,1);
         puntosUmbral = ones(numVariables,1)*umbralPorcentajeDeVarianza;
         ejeComponentes = 1:numVariables;
         
+        % PARA k que comienza en 1 HASTA el numero original de componentes HAGA
         for k=1:numVariables
+            % Sume la varianza de los componentes 1 hasta k y guadelo en porcentajeVarianzaAcumulada(k)
             porcentajeVarianzaAcumulada(k) = sum(porcentajeVarianzaExplicada(1:k));
             
+            %porcentajeVarianzaAcumulada(k) = sum(covarianzaEigenValores(1:k)) ./ sum(covarianzaEigenValores); % Otra forma de hacer la instruccion anterior pero los valores quedan entre 0 y 1.
             
+            % SI la suma de los k componentes supera el limite de varianza deseado Y todavia no se ha establecido un numero de componentes a dejar para el sistema ENTONCES
             if (sum(porcentajeVarianzaExplicada(1:k)) >= umbralPorcentajeDeVarianza) && (numCompAdmitidos == 0)
-                numCompAdmitidos = k;
+                numCompAdmitidos = k; % Se guarda el numero de la iteracion puesto que este es el numero de componentes a tener en cuenta para el sistema
             end
         end
         
+        % Una vez se calculan los varianzas acumuladas, se dibujan dos graficas:
+        
+        % La primera es una grafica de la magnitud de los EigenValores
         figure(1)
         stem(ejeComponentes, covarianzaEigenValores)
         xlim([1 numVariables]);
@@ -295,6 +318,7 @@ elseif Tipo==8
         xlabel('Componentes principales');
         ylabel('EigenValor');
         
+        % La segunda grafica consiste en la acumulacion progresiva de la varianza a medida que se recorren los componentes y cual es el limite o umbral de varianza acumulada que se fijo para incluir el numero de componentes principales.
         figure(2)
         plot(ejeComponentes, porcentajeVarianzaAcumulada);
         xlim([1 numVariables]);
@@ -305,24 +329,33 @@ elseif Tipo==8
         ylabel('Varianza explicada (%)');
         hold off;
         
+        % Ya determinado el numero de componentes con los que se quiere trabajar se estiman o proyectan los datos sobre dichos componentes principales para que el sistema trabaje con ellos
         aux = Xtrain*coefCompPrincipales;
         Xtrain = aux(:,1:numCompAdmitidos);
         
         aux = Xtest*coefCompPrincipales;
         Xtest = aux(:,1:numCompAdmitidos);
         
-        NumArboles=10;
-        Modelo = TreeBagger(NumArboles,Xtrain,Ytrain);
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         
-        Yest = predict(Modelo,Xtest);
-        Yest = str2double(Yest);
+        % Se hace el entrenamiento del modelo
+        net = train(net,Xtrain',Ytrain');
+        yest = sim(net,Xtest');
+        yest = yest';
+        [~,Yest] = max(yest,[],2); 
+        % Por ultimo, se calcula la eficiencia de esta iteracion
+        NXtest = size(Xtest,1);
+        MatrizConfusion = zeros(NClases,NClases);
+        MatrizConfusion = MatrizYMedidasFold(MatrizConfusion, Yest, Ytest, NXtest);
         
-        EficienciaTest(fold) = sum(Ytest == Yest)/length(Ytest);
+        diagonal = diag(MatrizConfusion);
+        EficienciaTest(fold) = sum(diag(MatrizConfusion))/sum(sum(MatrizConfusion));
+        PrecisionTest(fold,:) = diagonal' ./(sum(MatrizConfusion'));
+        SensibilidadTest(fold,:) = diagonal' ./(sum(MatrizConfusion));
     end
-    
-    Eficiencia = mean(EficienciaTest);
     IC = std(EficienciaTest);
-    Texto=['La eficiencia obtenida fue = ', num2str(Eficiencia),' +- ',num2str(IC)];
-    disp(Texto);
+    Error=1-mean(EficienciaTest);
+    resultados(mean(EficienciaTest),Error, mean(SensibilidadTest), mean(PrecisionTest), IC);
+
 end
     
